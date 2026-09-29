@@ -1,0 +1,8 @@
+numpy
+sounddevice
+faster-whisper
+jellyfish
+anthropic
+pyttsx3            # text-to-speech on Windows/Linux (macOS uses the built-in `say`)
+# Optional: better semantic matching (large download, ~500MB with torch)
+# sentence-transformers
