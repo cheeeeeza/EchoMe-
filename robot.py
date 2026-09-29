@@ -7,7 +7,9 @@ without touching the game logic.
 """
 from __future__ import annotations
 
+import json
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -44,6 +46,17 @@ class Robot(ABC):
     @abstractmethod
     def record(self, seconds: float) -> np.ndarray:
         """Record mono float32 audio at config.SAMPLE_RATE."""
+
+    @abstractmethod
+    def do_action(self, action: str | None) -> None:
+        """Start a gesture from actions.ACTIONS (None = back to neutral). Non-blocking."""
+
+    def start_recording(self, seconds: float) -> None:
+        """Start recording without blocking (so the camera can run at the same time)."""
+        raise NotImplementedError
+
+    def finish_recording(self) -> np.ndarray:
+        raise NotImplementedError
 
     def express(self, mood: str) -> None:
         """Hook for gestures/LEDs on a real robot (e.g. 'happy', 'encourage', 'calm')."""
@@ -192,7 +205,23 @@ class LocalRobot(Robot):
             time.sleep(0.3)
         print("🎤 Your turn!")
 
+    # --- gestures ---
+    def do_action(self, action):
+        # The laptop has no arms: vision.py draws the robot doing it on screen.
+        if action:
+            print(f"   🤖 does: {action.replace('_', ' ')}")
+
     # --- mic ---
+    def start_recording(self, seconds):
+        import sounddevice as sd
+        self._rec = sd.rec(int(seconds * config.SAMPLE_RATE), samplerate=config.SAMPLE_RATE,
+                           channels=1, dtype="float32")
+
+    def finish_recording(self):
+        import sounddevice as sd
+        sd.wait()
+        return self._rec[:, 0]
+
     def record(self, seconds):
         import sounddevice as sd
 
@@ -211,6 +240,86 @@ class LocalRobot(Robot):
 
 
 # ---------------------------------------------------------------------------
+# Laptop mic + Pepper's voice
+# ---------------------------------------------------------------------------
+class PepperSpeakerRobot(LocalRobot):
+    """
+    Pepper speaks, keeps the beat and plays the "your turn" chime; the laptop
+    microphone records the child. Needs pepper_server.py running on the robot.
+    The beat runs on Pepper itself, so Wi-Fi delays can't make it wobble.
+    """
+
+    def __init__(self, ip: str, port: int = 5567, beat: bool = True):
+        super().__init__(speak=True, beat=beat)
+        self._lock = threading.Lock()
+        try:
+            self._sock = socket.create_connection((ip, port), timeout=5)
+        except OSError as e:
+            raise RuntimeError(f"Couldn't reach Pepper's speech/beat server at {ip}:{port} ({e}). "
+                               "Is pepper_server.py running on the robot?") from e
+        self._sock.settimeout(None)
+        self._reader = self._sock.makefile("r", encoding="utf-8")
+        self._downbeat_next = False
+        self._send({"op": "ping"})
+        print(f"🔊 Pepper is the speaker ({ip})")
+
+    def _send(self, cmd: dict) -> dict:
+        with self._lock:
+            self._sock.sendall((json.dumps(cmd) + "\n").encode("utf-8"))
+            line = self._reader.readline()
+        if not line:
+            raise ConnectionError("Lost connection to Pepper")
+        reply = json.loads(line)
+        if not reply.get("ok"):
+            print(f"   ⚠️  Pepper: {reply.get('error')}")
+        return reply
+
+    def say(self, text, bpm=None):
+        print(f"🤖 Robot: {text}")
+        # Same pacing idea as the laptop voice, as a Pepper speed percentage (100 = normal)
+        wpm = float(np.clip((bpm or 100) * 1.5, 110, 175))
+        speed = int(np.clip(wpm / 170 * 100, 75, 110))   # Pepper speed %; tune if it sounds too slow/fast
+        self._send({"op": "say", "text": text, "speed": speed, "downbeat": self._downbeat_next})
+        self._downbeat_next = False
+
+    def start_beat(self, bpm):
+        if self.beat_enabled:
+            self._send({"op": "beat_start", "bpm": int(bpm)})
+            self._beat_on = True
+
+    def stop_beat(self):
+        if self._beat_on:
+            self._send({"op": "beat_stop"})
+        self._beat_on = False
+
+    def set_bpm(self, bpm):
+        if self._beat_on:
+            self._send({"op": "set_bpm", "bpm": int(bpm)})
+
+    PEPPER_GESTURES = {"wave"}        # the rest still show on the laptop's stick figure
+
+    def do_action(self, action):
+        super().do_action(action)
+        if action in self.PEPPER_GESTURES:
+            self._send({"op": "gesture", "name": action})
+
+    def wait_for_downbeat(self):
+        # Pepper waits for the bar itself, so the timing stays tight over Wi-Fi
+        self._downbeat_next = self._beat_on
+
+    def cue_turn(self):
+        self._send({"op": "chime"})
+        print("🎤 Your turn!")
+
+    def close(self):
+        try:
+            self.stop_beat()
+            self._sock.close()
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Pepper (future)
 # ---------------------------------------------------------------------------
 class PepperRobot(Robot):
@@ -223,6 +332,11 @@ class PepperRobot(Robot):
         record        -> ALAudioDevice.subscribe + processRemote (stream mic to laptop),
                          then run Whisper on the laptop as we do now
         express       -> ALLeds / ALAnimationPlayer ('happy', 'calm' animations)
+        do_action     -> ALAnimationPlayer.run(<animation path>, _async=True) or
+                         ALMotion.angleInterpolation on the arm joints, one entry per
+                         action in actions.ACTIONS (wave, arms_up, hug_self, ...)
+        camera        -> keep the laptop webcam, or read Pepper's head camera via ALVideoDevice
+                         and feed the frames into vision.py
     """
 
     def __init__(self, ip: str, port: int = 9559):
@@ -235,3 +349,4 @@ class PepperRobot(Robot):
     def wait_for_downbeat(self): ...
     def cue_turn(self): ...
     def record(self, seconds): ...
+    def do_action(self, action): ...

@@ -25,11 +25,17 @@ BEAT_VOLUME = 0.25          # keep low so the mic doesn't pick it up much (headp
 BEATS_PER_BAR = 4
 
 # --- Camera ---------------------------------------------------------------
-# "pepper" = Pepper's head camera (run pepper_camera_server.py on the robot first)
+# "pepper" = Pepper's head camera (run pepper_server.py on the robot first)
 # "webcam" = laptop webcam (handy for testing without the robot)
 CAMERA_SOURCE = os.getenv("RHYTHM_CAMERA", "pepper")
-PEPPER_IP = os.getenv("PEPPER_IP", "192.168.1.100")    # <- change to your Pepper's IP
+PEPPER_IP = os.getenv("PEPPER_IP", "10.234.6.18")     # Haku's IP (press the chest button if it changes)
 PEPPER_CAMERA_PORT = 5566
+PEPPER_COMMAND_PORT = 5567
+
+# --- Speaker ---------------------------------------------------------------
+# "pepper" = Pepper speaks and plays the beat (laptop mic still listens)
+# "laptop" = laptop speakers
+SPEAKER = os.getenv("RHYTHM_SPEAKER", "pepper")
 
 # --- Gestures ------------------------------------------------------------
 SHOW_ACTION_DURING_TURN = True   # keep the robot doing the move on screen while the child copies it

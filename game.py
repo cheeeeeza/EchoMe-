@@ -7,7 +7,8 @@ Rhythm Robot — Call and Response prototype.
     python game.py --no-beat    # no metronome
     python game.py --no-camera  # robot still does gestures, but they aren't checked
     python game.py --camera webcam           # laptop webcam instead of Pepper's camera
-    python game.py --pepper-ip 192.168.1.42  # Pepper's camera at this address
+    python game.py --pepper-ip 192.168.1.42  # Pepper at this address
+    python game.py --speaker laptop          # laptop speakers instead of Pepper's voice
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ import config
 from brain import Brain
 from coach import Difficulty, hint, line
 from matching import compare
-from robot import LocalRobot
+from robot import LocalRobot, PepperSpeakerRobot
 from actions import ACTIONS
 from speech import Heard
 from vision import ActionResult   # light import: cv2/mediapipe only load if the camera is used
@@ -238,6 +239,16 @@ def banner(text):
     print("\n" + "═" * 64 + f"\n  {text}\n" + "═" * 64)
 
 
+def make_robot(args):
+    """Pepper's voice + laptop mic if possible, otherwise everything on the laptop."""
+    if args.speaker == "pepper" and not args.mute:
+        try:
+            return PepperSpeakerRobot(config.PEPPER_IP, config.PEPPER_COMMAND_PORT, beat=not args.no_beat)
+        except Exception as e:
+            print(f"⚠️  {e}\n   Using the laptop speakers instead.")
+    return LocalRobot(speak=not args.mute, beat=not args.no_beat)
+
+
 def choose_mode() -> None:
     banner("🥁  RHYTHM ROBOT")
     print("  1) Call and Response\n  2) Pitch / Stress Matching   (coming soon)\n"
@@ -259,6 +270,8 @@ def main():
     ap.add_argument("--camera", choices=["pepper", "webcam"], default=config.CAMERA_SOURCE,
                     help="where the camera frames come from (default from config.py)")
     ap.add_argument("--pepper-ip", default=None, help="override PEPPER_IP from config.py")
+    ap.add_argument("--speaker", choices=["pepper", "laptop"], default=config.SPEAKER,
+                    help="who talks and plays the beat (default from config.py)")
     args = ap.parse_args()
 
     choose_mode()
@@ -268,9 +281,9 @@ def main():
     except ValueError:
         age = 8
 
-    robot = LocalRobot(speak=not args.mute, beat=not args.no_beat)
     if args.pepper_ip:
         config.PEPPER_IP = args.pepper_ip
+    robot = make_robot(args)
     session = Session(robot, keyboard=args.keyboard, camera=None if args.no_camera else args.camera)
     brain = Brain()
     session.calibrate()
@@ -281,6 +294,7 @@ def main():
         # ---------------- screening ----------------
         banner("🔎  SCREENING — just listening, no scores yet")
         phrases = brain.screening_phrases(age)
+        robot.do_action("wave")
         robot.say(f"Hi {name}! I'm your rhythm robot. First, let's warm up. "
                   "When I say something, you say it back after the chime!")
         for i, p in enumerate(phrases, 1):
@@ -289,7 +303,7 @@ def main():
             t["probes"] = p.get("probes", "")
             screening.append(t)
         robot.stop_beat()
-# TEST REMOVE THIS LATER
+
         # ---------------- plan levels ----------------
         banner("🧠  Designing levels for " + name)
         robot.say("Great warm up! Give me a second to make your levels.")
@@ -332,9 +346,14 @@ def main():
     except KeyboardInterrupt:
         print("\n\n⏹  Session stopped early.")
     finally:
-        robot.stop_beat()
-        if session.vision:
-            session.vision.close()
+        # cleanup must never stop the results from printing
+        for step in (robot.stop_beat,
+                     session.vision.close if session.vision else None):
+            if step:
+                try:
+                    step()
+                except Exception as e:
+                    print(f"(cleanup warning: {e})")
 
     # ---------------- results ----------------
     banner(f"📊  RESULTS FOR {name.upper()}")
@@ -354,7 +373,16 @@ def main():
     print(brain.analyse(age, screening, levels, trials))
     print()
     if trials:
-        robot.say(f"You did so well today, {name}. See you next time!")
+        try:
+            robot.do_action("wave")
+            robot.say(f"You did so well today, {name}. See you next time!")
+        except Exception as e:
+            print(f"(couldn't say goodbye: {e})")
+    if hasattr(robot, "close"):
+        try:
+            robot.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

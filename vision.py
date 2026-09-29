@@ -49,7 +49,7 @@ class WebcamSource:
 
 
 class PepperCameraSource:
-    """Receives frames streamed by pepper_camera_server.py (running on the robot)."""
+    """Receives frames streamed by pepper_server.py (running on the robot)."""
 
     def __init__(self, cv2, ip: str, port: int):
         self.cv2, self.addr = cv2, (ip, port)
@@ -69,7 +69,7 @@ class PepperCameraSource:
         except OSError as e:
             raise RuntimeError(
                 f"Couldn't reach Pepper's camera at {self.addr[0]}:{self.addr[1]} ({e}). "
-                "Is pepper_camera_server.py running on the robot, and is PEPPER_IP right?") from e
+                "Is pepper_server.py running on the robot, and is PEPPER_IP right?") from e
 
     def _recv_exact(self, n):
         buf = bytearray()
@@ -95,12 +95,16 @@ class PepperCameraSource:
             except Exception as e:
                 if self._stop:
                     return
-                print(f"\n⚠️  Pepper camera stream dropped ({e}) — reconnecting...")
-                time.sleep(1.0)
-                try:
-                    self.sock = self._connect()
-                except RuntimeError:
-                    pass
+                print(f"\n⚠️  Pepper camera stream dropped ({e}) — reconnecting "
+                      "(check Haku's window for an error)...")
+                while not self._stop:                  # retry quietly until it's back
+                    time.sleep(1.0)
+                    try:
+                        self.sock = self._connect()
+                        print("📷 Pepper camera reconnected.")
+                        break
+                    except RuntimeError:
+                        continue
 
     def read(self, timeout: float = 0.5):
         """Newest frame since the last read (waits briefly for one)."""
@@ -245,6 +249,8 @@ class Vision:
             self._draw(frame, None, None, text, "", (120, 120, 120), 0)
 
     def close(self):
-        self.cap.release()
-        self.landmarker.close()
-        self.cv2.destroyAllWindows()
+        for step in (self.cap.close, self.landmarker.close, self.cv2.destroyAllWindows):
+            try:
+                step()
+            except Exception:
+                pass
