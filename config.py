@@ -37,6 +37,15 @@ PEPPER_COMMAND_PORT = 5567
 # "laptop" = laptop speakers
 SPEAKER = os.getenv("RHYTHM_SPEAKER", "pepper")
 
+# --- Speaker calibration ---------------------------------------------------
+# Before the game starts, the laptop listens to the room (see speaker.py) and sets
+# Pepper's output level: a noisy room needs him louder, a quiet room quieter.
+CALIBRATE_SECONDS = 2.0      # how long we listen to the room tone
+CALIBRATE_LOW_DB = -55.0     # room tone at/below this -> SPEAKER_VOLUME_MIN
+CALIBRATE_HIGH_DB = -25.0    # room tone at/above this -> SPEAKER_VOLUME_MAX
+SPEAKER_VOLUME_MIN = 0.25    # quiet room, 0-1 (Pepper receives this as 25/100)
+SPEAKER_VOLUME_MAX = 0.90    # noisy room, 0-1 (Pepper receives this as 90/100)
+
 # --- Gestures ------------------------------------------------------------
 SHOW_ACTION_DURING_TURN = True   # keep the robot doing the move on screen while the child copies it
                                  # (False = child has to remember it)

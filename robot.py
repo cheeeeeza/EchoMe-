@@ -62,6 +62,10 @@ class Robot(ABC):
         """Hook for gestures/LEDs on a real robot (e.g. 'happy', 'encourage', 'calm')."""
         pass
 
+    def set_speaker_volume(self, volume: float) -> None:
+        """Set the speaker level (0-1). No-op when the laptop is the speaker."""
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Laptop implementation
@@ -281,6 +285,9 @@ class PepperSpeakerRobot(LocalRobot):
         speed = int(np.clip(wpm / 170 * 100, 75, 110))   # Pepper speed %; tune if it sounds too slow/fast
         self._send({"op": "say", "text": text, "speed": speed, "downbeat": self._downbeat_next})
         self._downbeat_next = False
+
+    def set_speaker_volume(self, volume):
+        self._send({"op": "set_volume", "volume": float(volume)})
 
     def start_beat(self, bpm):
         if self.beat_enabled:

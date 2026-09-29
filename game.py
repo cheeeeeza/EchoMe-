@@ -17,6 +17,7 @@ import random
 import threading
 
 import config
+import speaker
 from brain import Brain
 from coach import Difficulty, hint, line
 from matching import compare
@@ -86,8 +87,16 @@ class Session:
     def calibrate(self):
         if self.keyboard:
             return
-        print("🔇 Calibrating mic — please stay quiet for 2 seconds...")
-        self.transcriber.calibrate(self.robot.record(2.0))
+        print("🔇 Calibrating mic + speaker — please stay quiet for 2 seconds...")
+        audio = self.robot.record(config.CALIBRATE_SECONDS)
+        self.transcriber.calibrate(audio)
+        self.calibrate_speaker(audio)
+
+    def calibrate_speaker(self, audio):
+        """Match the speaker to the room: a noisier room gets a louder Pepper."""
+        level_db, volume = speaker.calibrate(audio)
+        print(f"🔊 Room {level_db:.1f} dBFS → speaker volume {volume:.2f}")
+        self.robot.set_speaker_volume(volume)
 
     @staticmethod
     def window_for(text: str, bpm: int, action: str | None) -> float:

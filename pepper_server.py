@@ -3,7 +3,8 @@
 Runs ON PEPPER. Two jobs:
   1. Streams Pepper's head camera to the laptop (port 5566) for pose detection.
   2. Takes commands from the laptop (port 5567): speak, run the beat, play the
-     "your turn" chime, and do gestures (wave). The beat runs here on the robot, so Wi-Fi delays can't make it wobble.
+     "your turn" chime, do gestures (wave), and set the output volume. The beat runs here
+     on the robot, so Wi-Fi delays can't make it wobble.
 
 Copy it over and run it (from your laptop's PowerShell):
     scp pepper_server.py nao@<PEPPER_IP>:/home/nao/
@@ -62,6 +63,11 @@ def call_async(fn, *args):
         t = threading.Thread(target=fn, args=args)
         t.daemon = True
         t.start()
+
+
+def output_level(volume):
+    """The laptop sends 0.0-1.0; ALAudioDevice wants an int 0-100 ("Volume [0-100]")."""
+    return int(max(0, min(100, round(float(volume) * 100))))
 
 
 # ------------------------------------------------------------------ beat
@@ -141,7 +147,16 @@ class Gestures(object):
     def run(self, name):
         if name != "wave":
             raise ValueError("no Pepper gesture for '%s' yet" % name)
+        print("Gesture: %s" % name)
+        try:
+            if not self.motion.robotIsWakeUp():
+                print("  ! Haku is resting (motors off), so it can't move. "
+                      "Run haku_check.py --wake, then restart this script.")
+                return
+        except Exception:
+            pass
         if not self.busy.acquire(False):         # already moving: skip rather than queue up
+            print("  (still doing the last gesture - skipped)")
             return
         t = threading.Thread(target=self._wave)
         t.daemon = True
@@ -152,11 +167,13 @@ class Gestures(object):
             if self.anim is not None:
                 try:
                     self.anim.run(BUILTIN_WAVE)
+                    print("  done (built-in wave)")
                     return
                 except Exception as e:
                     print("(built-in wave unavailable: %s - using custom wave)" % e)
                     self.anim = None                 # don't try again every time
             self._custom_wave()
+            print("  done (custom wave)")
         except Exception:
             traceback.print_exc()
         finally:
@@ -177,7 +194,7 @@ class Gestures(object):
 
 
 # ------------------------------------------------------------------ commands
-def serve_commands(port, tts, audio, metro, gain, gestures):
+def serve_commands(port, tts, audio, metro, gain, gestures, audiodev):
     server = _listen(port)
     while True:
         conn, addr = server.accept()
@@ -185,7 +202,7 @@ def serve_commands(port, tts, audio, metro, gain, gestures):
         reader = conn.makefile("r")
         try:
             for line in reader:
-                reply = _run_command(line, tts, audio, metro, gain, gestures)
+                reply = _run_command(line, tts, audio, metro, gain, gestures, audiodev)
                 conn.sendall((json.dumps(reply) + "\n").encode("utf-8"))
         except (socket.error, IOError):
             pass
@@ -195,7 +212,7 @@ def serve_commands(port, tts, audio, metro, gain, gestures):
             print("Speech/beat connection closed - waiting again.")
 
 
-def _run_command(line, tts, audio, metro, gain, gestures):
+def _run_command(line, tts, audio, metro, gain, gestures, audiodev):
     try:
         cmd = json.loads(line)
     except ValueError:
@@ -220,6 +237,10 @@ def _run_command(line, tts, audio, metro, gain, gestures):
             if gestures is None:
                 return {"ok": False, "error": "gestures unavailable on this robot"}
             gestures.run(cmd["name"])
+        elif op == "set_volume":
+            level = output_level(cmd["volume"])
+            audiodev.setOutputVolume(level)
+            print("Laptop set the output volume to %d/100" % level)
         elif op == "ping":
             pass
         else:
@@ -345,6 +366,7 @@ def main():
     video = session.service("ALVideoDevice")
     audio = session.service("ALAudioPlayer")
     tts = session.service("ALTextToSpeech")
+    audiodev = session.service("ALAudioDevice")
     try:
         tts.setLanguage("English")
         tts.setVolume(args.volume)
@@ -373,7 +395,7 @@ def main():
     signal.signal(signal.SIGTERM, cleanup)
 
     _thread(serve_camera, args.port, video, handle, args.fps)
-    _thread(serve_commands, args.cmd_port, tts, audio, metro, args.gain, gestures)
+    _thread(serve_commands, args.cmd_port, tts, audio, metro, args.gain, gestures, audiodev)
     print("Camera ready (%s, %d fps, %s)." % (args.res, args.fps, "JPEG" if HAVE_CV2 else "raw frames"))
     print("Waiting for the laptop on ports %d (camera) and %d (speech/beat)... Ctrl+C to stop"
           % (args.port, args.cmd_port))
