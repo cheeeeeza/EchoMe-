@@ -289,7 +289,7 @@ def main():
             t["probes"] = p.get("probes", "")
             screening.append(t)
         robot.stop_beat()
-
+# TEST REMOVE THIS LATER
         # ---------------- plan levels ----------------
         banner("🧠  Designing levels for " + name)
         robot.say("Great warm up! Give me a second to make your levels.")
