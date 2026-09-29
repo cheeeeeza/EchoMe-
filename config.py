@@ -43,7 +43,7 @@ SPEAKER = os.getenv("RHYTHM_SPEAKER", "pepper")
 CALIBRATE_SECONDS = 2.0      # how long we listen to the room tone
 CALIBRATE_LOW_DB = -55.0     # room tone at/below this -> SPEAKER_VOLUME_MIN
 CALIBRATE_HIGH_DB = -25.0    # room tone at/above this -> SPEAKER_VOLUME_MAX
-SPEAKER_VOLUME_MIN = 0.25    # quiet room, 0-1 (Pepper receives this as 25/100)
+SPEAKER_VOLUME_MIN = 0.50    # quiet room, 0-1 (Pepper receives this as 50/100)
 SPEAKER_VOLUME_MAX = 0.90    # noisy room, 0-1 (Pepper receives this as 90/100)
 
 # --- Gestures ------------------------------------------------------------

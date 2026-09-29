@@ -1,0 +1,12 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Editor settings
+.vscode/
+
+# Hugging Face model cache (Whisper base.en, ~141 MB, downloaded on first run)
+.hf/

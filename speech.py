@@ -1,11 +1,18 @@
 """Speech-to-text (faster-whisper, runs locally) + response-latency detection."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import numpy as np
 
 import config
+
+# Hugging Face caches the Whisper model in ~/.cache/huggingface by default. Where that
+# folder is not writable (restricted shells, Defender-controlled folders) the very first
+# run dies with PermissionError before the game can start, so keep the cache beside this
+# file instead. An explicitly set HF_HOME still takes precedence.
+os.environ.setdefault("HF_HOME", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".hf"))
 
 
 @dataclass
